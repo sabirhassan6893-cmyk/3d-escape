@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Esc Key Escape — Single File Demo</title>
+  <style>
+    html,body{height:100%;}
+    body{margin:0;background:#fff;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;color:#111}
+    #stage{position:relative;width:100%;height:100vh;overflow:hidden}
+    /* softer, Apple-like shadows */
+    #esc-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:110px;height:60px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:20px;color:#111;border-radius:10px;background:linear-gradient(180deg,#f7f7f9 0%,#e9e9ec 60%,#d6d6da 100%);box-shadow:0 8px 30px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06), inset 0 2px 0 rgba(255,255,255,0.9);border:1px solid rgba(0,0,0,0.04);cursor:pointer;transition:left 420ms ease-in-out, top 420ms ease-in-out, transform 220ms ease-in-out;will-change:left,top,transform;user-select:none;box-sizing:border-box}
+    #esc-btn:active{transform:translate(-50%,-50%) translateY(2px);box-shadow:0 4px 12px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.85)}
+    .controls{position:fixed;right:16px;top:16px;background:#fff;border:1px solid rgba(0,0,0,0.04);padding:12px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);max-width:300px;font-size:13px}
+    .row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    label{min-width:90px;font-weight:600}
+    input[type=range]{flex:1}
+    .small{font-size:12px;color:#555}
+    .footer{position:fixed;left:16px;bottom:12px;font-size:13px;color:#444}
+    button{padding:6px 8px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);background:#f3f4f6;cursor:pointer}
+    /* success overlay */
+    #successOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.95);z-index:9999;visibility:hidden;opacity:0;transition:opacity .25s ease, visibility .25s}
+    #successOverlay.show{visibility:visible;opacity:1}
+    #successContent{text-align:center}
+    #successContent h1{font-size:60px;margin:0;font-weight:800;color:#111}
+    #successContent p{font-size:20px;margin:12px 0 20px;color:#333}
+    #startAgain{background:#0b67ff;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer}
+    canvas.confetti{position:fixed;inset:0;pointer-events:none;z-index:10000}
+    @keyframes ctaWiggle{
+      0%{transform:translateY(0) scale(1) rotate(0)}
+      25%{transform:translateY(-6px) scale(1.1) rotate(-4deg)}
+      50%{transform:translateY(0) scale(1) rotate(4deg)}
+      75%{transform:translateY(-3px) scale(1.05) rotate(-2deg)}
+      100%{transform:translateY(0) scale(1) rotate(0)}
+    }
+    #startAgain.wiggle{animation:ctaWiggle 820ms cubic-bezier(.2,.8,.2,1)}
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="esc-btn">Esc</div>
+  </div>
+  <div class="controls" aria-hidden="false">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+      <strong>Settings</strong>
+      <button id="toggleSettings" aria-expanded="false">Show</button>
+    </div>
+    <div id="configPanel" style="display:none">
+      <div class="row"><label>Proximity</label><input id="proximity" type="range" min="40" max="260" value="90"><div class="small" id="proxVal">90px</div></div>
+      <div class="row"><label>Escape</label><input id="amount" type="range" min="100" max="900" value="500"><div class="small" id="amtVal">500px</div></div>
+      <div class="row"><label>Sound</label><select id="soundSel"><option value="whip">Whip</option><option value="whoosh" selected>Whoosh</option><option value="off">Off</option></select></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px"><button id="resetBtn">Bring to center</button></div>
+    </div>
+  </div>
+  <div class="footer">Click the ESC to ecape!</div>
+  <!-- success overlay (hidden until click) -->
+  <div id="successOverlay" role="dialog" aria-hidden="true">
+    <canvas class="confetti"></canvas>
+    <div id="successContent">
+      <h1>CONGRATULATIONS!</h1>
+      <p>You've escaped the unescapeable.</p>
+      <button id="startAgain">Start again</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const btn = document.getElementById('esc-btn');
+    const prox = document.getElementById('proximity');
+    const amt = document.getElementById('amount');
+    const proxVal = document.getElementById('proxVal');
+    const amtVal = document.getElementById('amtVal');
+    const soundSel = document.getElementById('soundSel');
+    const resetBtn = document.getElementById('resetBtn');
+    const toggleSettings = document.getElementById('toggleSettings');
+    const configPanel = document.getElementById('configPanel');
+
+    let ESCAPE_DISTANCE = Number(prox.value);
+    let ESCAPE_AMOUNT = Number(amt.value);
+    let cooldown = false;
+
+    const overlay = document.getElementById('successOverlay');
+    const confCanvas = overlay.querySelector('canvas.confetti');
+    const startAgain = document.getElementById('startAgain');
+
+    // confetti setup
+    let confettiCtx = null;
+    let confettiParticles = [];
+    let confettiAnimId = null;
+
+    function initConfetti(){
+      if(!confCanvas) return;
+      confCanvas.width = window.innerWidth;
+      confCanvas.height = window.innerHeight;
+      confettiCtx = confCanvas.getContext('2d');
+    }
+
+    function spawnConfetti(count = 120){
+      confettiParticles = [];
+      const colors = ['#ff4d4f','#ffb400','#36cfc9','#0b67ff','#9254de'];
+      for(let i=0;i<count;i++){
+        confettiParticles.push({
+          x: Math.random()*confCanvas.width,
+          y: Math.random()*confCanvas.height - confCanvas.height/2,
+          vx: (Math.random()-0.5)*8,
+          vy: Math.random()*6+2,
+          size: Math.random()*8+6,
+          color: colors[Math.floor(Math.random()*colors.length)],
+          rot: Math.random()*360,
+          rotSpeed: (Math.random()-0.5)*10
+        });
+      }
+    }
+
+    function renderConfetti(){
+      if(!confettiCtx) return;
+      confettiCtx.clearRect(0,0,confCanvas.width,confCanvas.height);
+      for(const p of confettiParticles){
+        p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.rot += p.rotSpeed;
+        confettiCtx.save();
+        confettiCtx.translate(p.x,p.y);
+        confettiCtx.rotate(p.rot * Math.PI/180);
+        confettiCtx.fillStyle = p.color;
+        confettiCtx.fillRect(-p.size/2,-p.size/2,p.size,p.size*0.6);
+        confettiCtx.restore();
+      }
+      // remove offscreen particles
+      confettiParticles = confettiParticles.filter(p=>p.y < confCanvas.height+50);
+      if(confettiParticles.length>0){ confettiAnimId = requestAnimationFrame(renderConfetti); } else { cancelAnimationFrame(confettiAnimId); confettiAnimId = null; }
+    }
+
+    function showSuccess(){
+      initConfetti(); spawnConfetti(320); overlay.classList.add('show'); overlay.setAttribute('aria-hidden','false');
+      // trigger CTA wiggle
+      try{ startAgain.classList.remove('wiggle'); }catch(e){}
+      // force reflow then add class to restart animation
+      void startAgain.offsetWidth;
+      startAgain.classList.add('wiggle');
+      renderConfetti();
+    }
+
+    function hideSuccess(){ overlay.classList.remove('show'); overlay.setAttribute('aria-hidden','true'); if(confettiAnimId) cancelAnimationFrame(confettiAnimId); confettiParticles = []; if(confettiCtx) confettiCtx.clearRect(0,0,confCanvas.width,confCanvas.height); }
+
+    prox.addEventListener('input', ()=>{ ESCAPE_DISTANCE = Number(prox.value); proxVal.textContent = ESCAPE_DISTANCE + 'px'; });
+    amt.addEventListener('input', ()=>{ ESCAPE_AMOUNT = Number(amt.value); amtVal.textContent = ESCAPE_AMOUNT + 'px'; });
+
+    // collapsible settings panel
+    toggleSettings.addEventListener('click', ()=>{
+      const expanded = toggleSettings.getAttribute('aria-expanded') === 'true';
+      if(expanded){
+        configPanel.style.display = 'none';
+        toggleSettings.textContent = 'Show';
+        toggleSettings.setAttribute('aria-expanded','false');
+      } else {
+        configPanel.style.display = '';
+        toggleSettings.textContent = 'Hide';
+        toggleSettings.setAttribute('aria-expanded','true');
+      }
+    });
+
+    // center using absolute left/top for easier animation
+    function centerButton(){
+      const rect = btn.getBoundingClientRect();
+      const left = Math.round((window.innerWidth - rect.width) / 2);
+      const top = Math.round((window.innerHeight - rect.height) / 2);
+      btn.style.left = left + 'px';
+      btn.style.top = top + 'px';
+      btn.style.transform = 'translate(0,0)';
+    }
+
+    window.addEventListener('resize', centerButton);
+    window.addEventListener('load', centerButton);
+
+    // WebAudio whip/whoosh synth
+    let audioCtx = null;
+    function ensureAudio(){ if(!audioCtx){ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } }
+
+    function playWhip(){
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      // noise burst
+      const bufferSize = audioCtx.sampleRate * 0.2;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for(let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize) * 0.8; }
+      const src = audioCtx.createBufferSource(); src.buffer = buffer;
+      const band = audioCtx.createBiquadFilter(); band.type='highpass'; band.frequency.setValueAtTime(1000,t);
+      const g = audioCtx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(1.0,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      src.connect(band); band.connect(g); g.connect(audioCtx.destination);
+      src.start(); src.stop(t+0.2);
+    }
+
+    function playWhoosh(){
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter(); filter.type='bandpass';
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(600, t);
+      osc.frequency.exponentialRampToValueAtTime(120, t+0.25);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t+0.32);
+      osc.connect(filter); filter.connect(g); g.connect(audioCtx.destination);
+      osc.start(); osc.stop(t+0.35);
+    }
+
+    function playSoundByName(name){ if(name==='off') return; if(name==='whip') playWhip(); else playWhoosh(); }
+
+    function distance(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
+    function clamp(n,min,max){ return Math.max(min, Math.min(n, max)); }
+
+    document.addEventListener('pointermove', (e)=>{
+      const mouseX = e.clientX, mouseY = e.clientY;
+      const rect = btn.getBoundingClientRect();
+      const btnCenterX = rect.left + rect.width/2;
+      const btnCenterY = rect.top + rect.height/2;
+      const d = distance(mouseX, mouseY, btnCenterX, btnCenterY);
+      if(d < ESCAPE_DISTANCE && !cooldown){
+        const angle = Math.random() * Math.PI * 2;
+        let dx = Math.cos(angle) * ESCAPE_AMOUNT;
+        let dy = Math.sin(angle) * ESCAPE_AMOUNT;
+        let newLeft = rect.left + dx;
+        let newTop = rect.top + dy;
+        newLeft = clamp(newLeft, 8, window.innerWidth - rect.width - 8);
+        newTop = clamp(newTop, 8, window.innerHeight - rect.height - 8);
+        btn.style.left = Math.round(newLeft) + 'px';
+        btn.style.top = Math.round(newTop) + 'px';
+        cooldown = true; setTimeout(()=>{ cooldown = false; }, 300);
+        // sound
+        if(soundSel.value !== 'off'){
+          if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+          playSoundByName(soundSel.value);
+        }
+      }
+    });
+
+    btn.addEventListener('click', ()=>{ btn.style.transition = 'transform 120ms ease'; btn.style.transform = 'translate(0,4px)'; setTimeout(()=>{ btn.style.transform = 'translate(0,0)'; }, 120); showSuccess(); });
+
+    resetBtn.addEventListener('click', centerButton);
+
+    // restart after success
+    startAgain.addEventListener('click', ()=>{ hideSuccess(); centerButton(); });
+
+    // ensure canvas resizes with window
+    window.addEventListener('resize', ()=>{ if(confCanvas){ confCanvas.width = window.innerWidth; confCanvas.height = window.innerHeight; } });
+
+    // Save button removed per request
+
+  })();
+  </script>
+</body>
+</html>
