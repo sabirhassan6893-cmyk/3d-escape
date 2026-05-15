@@ -44,3 +44,17 @@ It also helped me get more comfortable using AI as a coding partner, not to repl
 ## Live demo
 
 https://sabirhassan6893-cmyk.github.io/3d-escape/
+
+
+# Current status
+
+This is an early interaction experiment.
+The goal was to explore visual interaction and browser-based prototyping, not to present it as a finished production product.
+
+# About me
+
+I am a Senior Product Designer exploring AI-assisted prototyping, interaction design, and frontend implementation.
+
+Portfolio: https://sabirhassan.framer.website
+
+LinkedIn: https://linkedin.com/in/sabirhassan
