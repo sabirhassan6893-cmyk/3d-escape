@@ -43,3 +43,4 @@ It also helped me get more comfortable using AI as a coding partner, not to repl
 
 ## Live demo
 
+https://sabirhassan6893-cmyk.github.io/3d-escape/
